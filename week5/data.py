@@ -20,8 +20,8 @@ def calcTheta():
     return random.randint(0,360);
 
 # A Canvas class for drawing a map and particles:
-# 	- it takes care of a proper scaling and coordinate transformation between
-#	  the map frame of reference (in cm) and the display (in pixels)
+#     - it takes care of a proper scaling and coordinate transformation between
+#      the map frame of reference (in cm) and the display (in pixels)
 class Canvas:
     def __init__(self,map_size=210):
         self.map_size    = map_size;    # in cm;
@@ -34,11 +34,11 @@ class Canvas:
         y1 = self.__screenY(line[1]);
         x2 = self.__screenX(line[2]);
         y2 = self.__screenY(line[3]);
-        print "drawLine:" + str((x1,y1,x2,y2))
-
+        print ("drawLine:" + str((x1,y1,x2,y2)))
+        
     def drawParticles(self,data):
         display = [(self.__screenX(d[0]),self.__screenY(d[1])) + d[2:] for d in data];
-        print "drawParticles:" + str(display);
+        print ("drawParticles:" + str(display));
 
     def __screenX(self,x):
         return (x + self.margin)*self.scale
@@ -73,7 +73,7 @@ class Particles:
     def draw(self):
         canvas.drawParticles(self.data);
 
-canvas = Canvas();	# global canvas we are going to draw on
+canvas = Canvas();    # global canvas we are going to draw on
 
 mymap = Map();
 # Definitions of walls
