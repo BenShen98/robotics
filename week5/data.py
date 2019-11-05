@@ -5,6 +5,7 @@
 import time
 import random
 import math
+import numpy as np
 
 # Functions to generate some dummy particles data:
 def calcX():
@@ -18,6 +19,10 @@ def calcW():
 
 def calcTheta():
     return random.randint(0,360);
+
+def calDis(ax,ay,bx,by,x,y,theta):
+    result = ((by-ay)*(ax-x) - (bx-ax)*(ay-y))/((by-ay)*math.cos(theta)-(bx-ax)*math.sin(theta))
+    return result
 
 # A Canvas class for drawing a map and particles:
 #     - it takes care of a proper scaling and coordinate transformation between
@@ -60,18 +65,44 @@ class Map:
     def draw(self):
         for wall in self.walls:
             canvas.drawLine(wall);
+    def get_wall(self,index):
+        return self.walls[index]
 
+    def findwall(self,x,y,theta,dummy):
+        alldis = []
+        for i in range(len(self.walls)):
+            test = calDis(*self.walls[i],x,y,theta)
+            if (test<0): # discard negative distance
+                continue
+            elif (not self.check_within(x+test*math.cos(theta),y+test*math.sin(theta),theta,test)): # check intersection not within endpoints
+                continue
+            else:        
+                alldis.append([alldis,i])
+        print(alldis)
+        return (np.amin(alldis,axis=0))
+
+    def check_within(self,x,y,theta,dis):
+        for i in range(len(self.walls)):
+            temp = self.walls[i]
+            x_range = range(temp[0],temp[2])
+            y_range = range(temp[1],temp[3])
+            if (x in x_range and y in y_range):
+                return True
+        return False
 # Simple Particles set
 class Particles:
     def __init__(self):
         self.n = 10;    
-        self.data = [];
+        self.data = [(10,10,0,1)] * self.n
 
     def update(self):
         self.data = [(calcX(), calcY(), calcTheta(), calcW()) for i in range(self.n)];
     
     def draw(self):
         canvas.drawParticles(self.data);
+        
+    def get_particles(self):
+        return self.data[0]
 
 canvas = Canvas();    # global canvas we are going to draw on
 
@@ -94,12 +125,21 @@ mymap.add_wall((168,84,210,84));    # f
 mymap.add_wall((210,84,210,0));     # g
 mymap.add_wall((210,0,0,0));        # h
 mymap.draw();
+print(mymap.get_wall(0))
 
 particles = Particles();
+particles.draw()
 
-t = 0;
-while True:
-    particles.update();
-    particles.draw();
-    t += 0.05;
-    time.sleep(0.05);
+try:
+    print(mymap.findwall(*particles.get_particles()))
+except ValueError as e:
+    print(e)
+# t = 0;
+# while True:
+#     particles.update();
+#     particles.draw();
+#     t += 0.05;
+#     time.sleep(0.05);
+# Example code to generate random points
+
+
