@@ -24,6 +24,9 @@ def calDis(ax,ay,bx,by,x,y,theta):
     result = ((by-ay)*(ax-x) - (bx-ax)*(ay-y))/((by-ay)*math.cos(theta)-(bx-ax)*math.sin(theta))
     return result
 
+def myswap(x,y):
+    return y,x
+
 # A Canvas class for drawing a map and particles:
 #     - it takes care of a proper scaling and coordinate transformation between
 #      the map frame of reference (in cm) and the display (in pixels)
@@ -70,30 +73,43 @@ class Map:
 
     def findwall(self,x,y,theta,dummy):
         alldis = []
+        index = []
         for i in range(len(self.walls)):
             test = calDis(*self.walls[i],x,y,theta)
+            print(test)
             if (test<0): # discard negative distance
+                print("Negative test")
                 continue
             elif (not self.check_within(x+test*math.cos(theta),y+test*math.sin(theta),theta,test)): # check intersection not within endpoints
+                print("Not within endpoints ")
                 continue
-            else:        
-                alldis.append([alldis,i])
-        print(alldis)
-        return (np.amin(alldis,axis=0))
+            else: 
+                print("Found within endpoints")       
+                alldis.append(test)
+                index.append(i) 
+                print(alldis)
+        result = np.array(alldis)        
+        return [result.min(),index[result.argmin()]]
 
     def check_within(self,x,y,theta,dis):
         for i in range(len(self.walls)):
             temp = self.walls[i]
-            x_range = range(temp[0],temp[2])
-            y_range = range(temp[1],temp[3])
-            if (x in x_range and y in y_range):
+            x_upper = temp[2]
+            x_lowwer = temp[0]
+            y_upper = temp[3]
+            y_lowwer = temp[1]
+            if (x_upper < x_lowwer):
+                x_upper,x_lowwer = myswap(x_upper,x_lowwer)
+            if (y_upper < y_lowwer):
+                y_upper,y_lowwer = myswap(y_upper,y_lowwer)
+            if (x>= x_lowwer and x<=x_upper and y>= y_lowwer and y<=y_upper):
                 return True
         return False
 # Simple Particles set
 class Particles:
     def __init__(self):
         self.n = 10;    
-        self.data = [(10,10,0,1)] * self.n
+        self.data = [(200,30,math.radians(100),1)] * self.n
 
     def update(self):
         self.data = [(calcX(), calcY(), calcTheta(), calcW()) for i in range(self.n)];
@@ -125,13 +141,17 @@ mymap.add_wall((168,84,210,84));    # f
 mymap.add_wall((210,84,210,0));     # g
 mymap.add_wall((210,0,0,0));        # h
 mymap.draw();
+name_list = ["a","b","c","d","e","f","g","h"]
+
 print(mymap.get_wall(0))
 
 particles = Particles();
 particles.draw()
 
 try:
-    print(mymap.findwall(*particles.get_particles()))
+    dummy = mymap.findwall(*particles.get_particles())
+    print(dummy)
+    print(f"Intersect with wall: {name_list[dummy[1]]}")
 except ValueError as e:
     print(e)
 # t = 0;
