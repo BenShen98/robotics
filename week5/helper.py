@@ -18,7 +18,7 @@ Unit of measurement
 """
 
 class RobotBase(brickpi3.BrickPi3):
-    def __init__(self, M_LEFT, M_RIGHT,*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi)):
+    def __init__(self, M_LEFT, M_RIGHT,p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi)):
         # BP init
         super(RobotBase, self).__init__()
         self.M_LEFT = M_LEFT
@@ -35,7 +35,7 @@ class RobotBase(brickpi3.BrickPi3):
         # NOTE: p_weights and p_tuples need have same order
         self.p_count = p_count
         self.p_weights = [1.0/p_count] * p_count
-        self.p_tuples = [(0.0, 0.0, 0.0)] * p_count # (x,y,theta)
+        self.p_tuples = [p_start] * p_count # (x,y,theta)
 
         # config for gaussian noise, all normalised by cm, or by radian
         self.gaussian_e = gaussian_e
@@ -158,12 +158,12 @@ class Canvas:
         print ("drawLine:" + str((x1,y1,x2,y2)))
 
     def drawParticles(self,tuples, weights=None):
+        plot_dp = 2
         if weights:
-            # if weights is given, tuples = (x, y, theta)
-            display = [(self.__screenX(t[0]),self.__screenY(t[1])) + (t[2],) + (weights[i],)  for i, t in enumerate(tuples)]
+            display = [(self.__screenX(t[0]),self.__screenY(t[1])) + (round(t[2],plot_dp),) + (weights[i],)  for i, t in enumerate(tuples)]
         else:
-            # otherwise tuples = (x, y, theta, weight)
-            display = [(self.__screenX(t[0]),self.__screenY(t[1])) + t[2:] for t in tuples]
+            # without weights
+            display = [(self.__screenX(t[0]),self.__screenY(t[1])) + (round(t[2],plot_dp),) for t in tuples]
         print ("drawParticles:" + str(display))
 
     def __screenX(self,x):
