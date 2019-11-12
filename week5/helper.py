@@ -2,7 +2,7 @@
 
 import brickpi3
 import numpy as np
-from math import cos, sin, atan2, pi, sqrt
+from math import cos, sin, atan2, pi, sqrt, exp
 import time
 
 """
@@ -183,8 +183,69 @@ class Map:
     def clear(self):
         self.walls = [];
 
-    def get_wall(self,index):
-        return self.walls[index]
+    def inside_map(self,x,y):
+        if(x>=0 and x<=84 and y<=168 and y>=0): # section A on map
+            return True
+        elif(x>84 and x<=168 and y<=210 and y>=0): # section B on map
+            return True
+        elif(x>168 and x<=210 and y>=0 and y<= 84):
+            return True
+        else:
+            return False
+
+    def calculate_likelihood(x, y, t, z):
+        """
+        Return 0 for impossible value, None for unable to decide
+        """
+
+        # allow custom function to check if location is inside map
+        if not self.inside_map(x,y):
+            return 0
+
+        # config
+        max_d = 150                 # max reliable measuring distance for sonar
+        min_cos = cos(30 *pi/180)   # cutoff angle for sonar
+        sonar_var = 3*3             # variance of sonar
+        sonar_K = 1                 # offset value for sonar
+
+        min_m = None
+
+        for wall in self.walls:
+            a_x, a_y, b_x, b_y = wall
+
+            # find if cos(beta) < min_cos (too large angle)
+            # BUG: also check direction??????????
+            ab_distance = sqrt( (a_y-b_y)**2 + (b_x-a_x)**2 )
+            if (cos(t)*(a_y-b_y)+sin(t)*(b_x-a_x))/ab_distance < min_cos:
+                continue
+
+            # find if distance is greater than possible to detect
+            # BUG: also check direction?????????? (m<0)??
+            m = ((b_y-a_y)*(a_x-x)-(b_x-a_x)*(a_y-y)) / ((b_y-a_y)*cos(t)-(b_x-a_x)*sin(t))
+            if m > max_d or m<0:
+                continue
+
+            # check if sonar is hit between endpoint
+            _x = x + m*cos(t)
+            _y = y + m*sin(t)
+            if not ((a_x<_x and _x<b_x) or (b_x<_x and _x<a_x)):
+                continue
+            if not ((a_y<_y and _y<b_y) or (b_y<_y and _y<a_y)):
+                continue
+
+            # all check passed, add if is closer
+            if min_m and m<min_m:
+                min_m = m
+
+        # find min_m for the most likely wall, cal likelihood
+        # assume gaussian distribution
+        if min_m:
+            return exp( - (z-m)**2 / (2*sonar_var) ) + sonar_K
+        else:
+            return None
+
+
+
 
     def findwall(self,x,y,theta,dummy):
         alldis = []
