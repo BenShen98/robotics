@@ -23,7 +23,7 @@ max_sonar_distance = 150                 # max reliable measuring distance for s
 min_sonar_angle_cos = cos(30 *pi/180)   # cutoff angle for sonar
 
 class RobotBase(brickpi3.BrickPi3):
-    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=200, gaussian_e=(0,0.1), gaussian_f=(0, 0.002/180*pi), gaussian_g=(0,0.01/180*pi), debug_canvas=None):
+    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=200, gaussian_e=(0,0.001), gaussian_f=(0, 0.002/180*pi), gaussian_g=(0,0.01/180*pi), debug_canvas=None):
         # BP init
         super(RobotBase, self).__init__()
         self.M_LEFT = M_LEFT
@@ -36,7 +36,8 @@ class RobotBase(brickpi3.BrickPi3):
 
         # characteristics for robot turning
         self.stright_dps = 500
-        self.stright_dpcm = (7870/280 + 5949/210)/2 # degree of motor rotation to move 1 cm
+        #self.stright_dpcm = (7870/280 + 5949/210)/2 # degree of motor rotation to move 1 cm
+        self.stright_dpcm = 28.5
         self.turn_dps = 100
         self.turn_dpradian = 4252.0/5/2/pi # degree of motor rotation to trun 1 radian
 
@@ -173,8 +174,8 @@ class RobotBase(brickpi3.BrickPi3):
 
     def to_waypoint(self, x, y):
         # config
-        movement_accuracy = 2 # unit in cm
-        max_forward = 30
+        movement_accuracy = 1.5 # unit in cm
+        max_forward = 20
 
         # get estimation of current location
         while True:
