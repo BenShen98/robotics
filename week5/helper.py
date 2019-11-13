@@ -4,6 +4,8 @@ import brickpi3
 import numpy as np
 from math import cos, sin, atan2, pi, sqrt, exp
 import time
+from bisect import bisect_left
+import logging
 
 """
 Direction defintion
@@ -17,30 +19,46 @@ Unit of measurement
 3. Prameter proportional to angle or distance need to be normalised
 """
 
+max_sonar_distance = 150                 # max reliable measuring distance for sonar
+min_sonar_angle_cos = cos(30 *pi/180)   # cutoff angle for sonar
+
 class RobotBase(brickpi3.BrickPi3):
-    def __init__(self, M_LEFT, M_RIGHT,p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi)):
+    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi)):
         # BP init
         super(RobotBase, self).__init__()
         self.M_LEFT = M_LEFT
         self.M_RIGHT = M_RIGHT
 
-        # base characteristics config
+        self.M_SONAR = M_SONAR
+        self.S_SONAR = S_SONAR
+        self.set_sensor_type(self.S_SONAR, self.SENSOR_TYPE.NXT_ULTRASONIC)
+
+
+        # characteristics for robot turning
         self.stright_dps = 300
         self.stright_dpcm = 27.0 # degree of motor rotation to move 1 cm
         self.turn_dps = 50
         self.turn_dpradian = 4440.0/5/2/pi # degree of motor rotation to trun 1 radian
 
+        #TODO: characteristics for turntable
+        self.turntable_ratio = None
+        # self.set_motor_limits(self.M_SONAR, dps=100)
+
 
         # localisation init
+        self.map = map
+
         # NOTE: p_weights and p_tuples need have same order
         self.p_count = p_count
         self.p_weights = [1.0/p_count] * p_count
         self.p_tuples = [p_start] * p_count # (x,y,theta)
 
+
         # config for gaussian noise, all normalised by cm, or by radian
         self.gaussian_e = gaussian_e
         self.gaussian_f = gaussian_f
         self.gaussian_g = gaussian_g
+
 
         #wait hardware to init
         time.sleep(1)
@@ -50,33 +68,103 @@ class RobotBase(brickpi3.BrickPi3):
         self.reset_all()
         time.sleep(1)
 
+
+
     def get_est_pos(self):
         return np.average(self.p_tuples, axis=0, weights=self.p_weights)
 
+
+
+    def sonar_calibrate(self):
+        """
+        Return True when sucessful, False otherwise
+        """
+        # TODO: use turntable
+
+        # config
+        min_valid_rate = 0.9
+
+        sonar_distance = self.get_sensor(self.S_SONIC)
+
+        # discard this reading if is outof the reliable range
+        if sonar_distance>max_sonar_distance:
+            logging.warning("Sonar get distance {sonar_distance}, exceed {max_sonar_distance} limit")
+            return False
+
+
+        # making cumulative weight table
+        weight_table = [0] * self.p_count
+        invalid_read = 0 # only count return None, not return 0
+
+        for i, p in enumerate(self.p_tuples):
+            _x, _y, _t = p
+            _w = self.weights[i]
+
+            w = self.map.calculate_likelihood(*p, sonar_distance)
+
+            if w is None:
+                invalid_read += 1
+                w = 0
+
+            weight_table[i] = weight_table[i-1] + w*_w
+
+
+        # check if there are too many invalid read
+        if invalid_read/self.p_tuples < min_valid_rate:
+            logging.warning("Too much invalid particles")
+            return False
+
+
+        # generate next batch of particles
+        temp = []
+        rand = numpy.random.uniform(0, weight_table[-1], self.p_count)
+        for r in rand:
+            i = bisect_left(weight_table, r)
+            temp.append(self.p_tuples)
+
+        self.p_tuples = temp
+        self.p_weights = [1/self.p_count]
+
+        return True
+
+
+
+
     def to_waypoint(self, x, y):
+        # config
+        movement_accuracy = 5 # unit in cm
+
         # get estimation of current location
-        est_x, est_y, est_t = self.get_est_pos()
-        est_t = normalise_anlge(est_t)
+        while True:
+            logging.info(f"at ({est_x},{est_y}, to ({x},{y})turn {relative_t}, go {relative_d}")
+            est_x, est_y, est_t = self.get_est_pos()
+            est_t = normalise_anlge(est_t)
 
-        # calculate movement, abort it needed
-        diff_x = x - est_x
-        diff_y = y - est_y
-        target_t = atan2(diff_y, diff_x)
+            # calculate movement, abort it needed
+            diff_x = x - est_x
+            diff_y = y - est_y
+            target_t = atan2(diff_y, diff_x)
 
-        relative_t = target_t - est_t
-        relative_t = normalise_anlge(relative_t) # bond turning angle to +- pi
-        relative_d = sqrt(diff_x*diff_x + diff_y*diff_y)
+            relative_t = target_t - est_t
+            relative_t = normalise_anlge(relative_t) # bond turning angle to +- pi
+            relative_d = sqrt(diff_x*diff_x + diff_y*diff_y)
 
-        print(f"turn {relative_t}, go {relative_d}")
-        if relative_d < 0.001:
-            print("Warning: distance to move too small, ignore command")
-            return
+            logging.info(f"from ({est_x},{est_y} to ({x},{y})")
 
-        # perform movement
-        self.to_relative_turn(relative_t)
-        self.to_relative_forward(relative_d)
+            if relative_d < movement_accuracy:
+                logging.info(f"dis to waypoint: {relative_d}, require {movement_accuracy}")
+                return
 
-        # TODO: recalibration based on sensor
+            # perform movement
+            self.to_relative_turn(relative_t)
+            self.to_relative_forward(relative_d)
+
+            # recalibration based on sensor
+            if not self.recalibration():
+                logging.warn("Failed to recalibrate using particles")
+
+                # TODO: use turntable to seek alternative measurement
+
 
     def to_relative_forward(self, distance):
         # perform movement
@@ -203,8 +291,6 @@ class Map:
             return 0
 
         # config
-        max_d = 150                 # max reliable measuring distance for sonar
-        min_cos = cos(30 *pi/180)   # cutoff angle for sonar
         sonar_var = 3*3             # variance of sonar
         sonar_K = 1                 # offset value for sonar
 
@@ -213,16 +299,17 @@ class Map:
         for wall in self.walls:
             a_x, a_y, b_x, b_y = wall
 
-            # find if cos(beta) < min_cos (too large angle)
+            # find if cos(beta) < min_sonar_angle_cos (too large angle)
             # BUG: also check direction??????????
             ab_distance = sqrt( (a_y-b_y)**2 + (b_x-a_x)**2 )
-            if (cos(t)*(a_y-b_y)+sin(t)*(b_x-a_x))/ab_distance < min_cos:
+            beta = (cos(t)*(a_y-b_y)+sin(t)*(b_x-a_x))/ab_distance
+            if beta < min_sonar_angle_cos:
                 continue
 
             # find if distance is greater than possible to detect
             # BUG: also check direction?????????? (m<0)??
             m = ((b_y-a_y)*(a_x-x)-(b_x-a_x)*(a_y-y)) / ((b_y-a_y)*cos(t)-(b_x-a_x)*sin(t))
-            if m > max_d or m<0:
+            if m > max_sonar_distance or m<0:
                 continue
 
             # check if sonar is hit between endpoint
