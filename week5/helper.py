@@ -23,7 +23,7 @@ max_sonar_distance = 150                 # max reliable measuring distance for s
 min_sonar_angle_cos = cos(30 *pi/180)   # cutoff angle for sonar
 
 class RobotBase(brickpi3.BrickPi3):
-    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi), debug_canvas=None):
+    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=200, gaussian_e=(0,0.1), gaussian_f=(0, 0.002/180*pi), gaussian_g=(0,0.01/180*pi), debug_canvas=None):
         # BP init
         super(RobotBase, self).__init__()
         self.M_LEFT = M_LEFT
@@ -35,10 +35,10 @@ class RobotBase(brickpi3.BrickPi3):
 
 
         # characteristics for robot turning
-        self.stright_dps = 300
-        self.stright_dpcm = 27.0 # degree of motor rotation to move 1 cm
-        self.turn_dps = 50
-        self.turn_dpradian = 4440.0/5/2/pi # degree of motor rotation to trun 1 radian
+        self.stright_dps = 500
+        self.stright_dpcm = (7870/280 + 5949/210)/2 # degree of motor rotation to move 1 cm
+        self.turn_dps = 100
+        self.turn_dpradian = 4252.0/5/2/pi # degree of motor rotation to trun 1 radian
 
         #TODO: characteristics for turntable
         self.turntable_ratio = None
@@ -49,9 +49,15 @@ class RobotBase(brickpi3.BrickPi3):
         self.map = map
 
         # NOTE: p_weights and p_tuples need have same order
+        placement_error = 10/180*pi
         self.p_count = p_count
+        t_errors = np.random.normal(0, placement_error**2,  self.p_count)
         self.p_weights = [1.0/p_count] * p_count
-        self.p_tuples = [p_start] * p_count # (x,y,theta)
+
+        temp = []
+        for e in t_errors:
+            temp.append( (p_start[0], p_start[1], p_start[2]+e) )
+        self.p_tuples = temp
 
 
         # config for gaussian noise, all normalised by cm, or by radian
@@ -92,12 +98,17 @@ class RobotBase(brickpi3.BrickPi3):
             logging.warning("Hard code sonar reading!")
             sonar_distance = sonar_v
         else:
-            sonar_distance = self.get_sensor(self.S_SONIC)
+            time.sleep(0.1)
+            try:
+                sonar_distance = self.get_sensor(self.S_SONAR)
+            except:
+                logging.warning("invalid sonar data")
+                return False
 
 
         # discard this reading if is outof the reliable range
         if sonar_distance>max_sonar_distance:
-            logging.warning("Sonar get distance {sonar_distance}, exceed {max_sonar_distance} limit")
+            logging.warning(f"Sonar get distance {sonar_distance}, exceed {max_sonar_distance} limit")
             return False
 
 
@@ -132,11 +143,11 @@ class RobotBase(brickpi3.BrickPi3):
 
         # check if there are too many invalid read
         if invalid_read/self.p_count > max_invalid_rate:
-            logging.warning("Too much invalid particles, get{invalid_read}")
+            logging.warning(f"Too much invalid particles, get{invalid_read}")
             return False
 
         if invalid_read:
-            logging.warning("Got {invalid_read} invalid particles")
+            logging.warning(f"Got {invalid_read} invalid particles")
 
 
         # generate next batch of particles
@@ -162,13 +173,15 @@ class RobotBase(brickpi3.BrickPi3):
 
     def to_waypoint(self, x, y):
         # config
-        movement_accuracy = 5 # unit in cm
+        movement_accuracy = 1 # unit in cm
+        max_forward = 30
 
         # get estimation of current location
         while True:
-            logging.info(f"at ({est_x},{est_y}, to ({x},{y})turn {relative_t}, go {relative_d}")
             est_x, est_y, est_t = self.get_est_pos()
             est_t = normalise_anlge(est_t)
+            logging.debug(f"at ({est_x},{est_y}, to ({x},{y})")
+
 
             # calculate movement, abort it needed
             diff_x = x - est_x
@@ -179,21 +192,31 @@ class RobotBase(brickpi3.BrickPi3):
             relative_t = normalise_anlge(relative_t) # bond turning angle to +- pi
             relative_d = sqrt(diff_x*diff_x + diff_y*diff_y)
 
-            logging.info(f"from ({est_x},{est_y} to ({x},{y})")
+            # break large increment to smaller
+            if relative_d > max_forward:
+                relative_d = max_forward
 
+            # exit
             if relative_d < movement_accuracy:
                 logging.info(f"dis to waypoint: {relative_d}, require {movement_accuracy}")
                 return
 
-            # perform movement
+            # perform movement and calibrate
             self.to_relative_turn(relative_t)
+            for _ in range(3):
+                self.sonar_calibrate()
+                if self.debug_canvas:
+                    self.debug_canvas.drawParticles(self.p_tuples, self.p_weights)
+                    time.sleep(0.5)
+
             self.to_relative_forward(relative_d)
+            for _ in range(3):
+                self.sonar_calibrate()
+                if self.debug_canvas:
+                    self.debug_canvas.drawParticles(self.p_tuples, self.p_weights)
+                    time.sleep(0.5)
 
-            # recalibration based on sensor
-            if not self.recalibration():
-                logging.warn("Failed to recalibrate using particles")
-
-                # TODO: use turntable to seek alternative measurement
+            # TODO: use turntable to seek alternative measurement
 
 
     def to_relative_forward(self, distance):
