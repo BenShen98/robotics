@@ -23,7 +23,7 @@ max_sonar_distance = 150                 # max reliable measuring distance for s
 min_sonar_angle_cos = cos(30 *pi/180)   # cutoff angle for sonar
 
 class RobotBase(brickpi3.BrickPi3):
-    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi)):
+    def __init__(self, M_LEFT, M_RIGHT, M_SONAR, S_SONAR, map, p_start=(0.0,0.0,0.0),*, p_count=100, gaussian_e=(0,0.003), gaussian_f=(0, 0), gaussian_g=(0,0.001/180*pi), debug_canvas=None):
         # BP init
         super(RobotBase, self).__init__()
         self.M_LEFT = M_LEFT
@@ -59,6 +59,9 @@ class RobotBase(brickpi3.BrickPi3):
         self.gaussian_f = gaussian_f
         self.gaussian_g = gaussian_g
 
+        # debug
+        self.debug_canvas = debug_canvas
+
 
         #wait hardware to init
         time.sleep(1)
@@ -75,16 +78,22 @@ class RobotBase(brickpi3.BrickPi3):
 
 
 
-    def sonar_calibrate(self):
+    def sonar_calibrate(self, sonar_v=None):
         """
         Return True when sucessful, False otherwise
         """
         # TODO: use turntable
 
         # config
-        min_valid_rate = 0.9
+        max_invalid_rate = 0.9
 
-        sonar_distance = self.get_sensor(self.S_SONIC)
+
+        if sonar_v:
+            logging.warning("Hard code sonar reading!")
+            sonar_distance = sonar_v
+        else:
+            sonar_distance = self.get_sensor(self.S_SONIC)
+
 
         # discard this reading if is outof the reliable range
         if sonar_distance>max_sonar_distance:
@@ -96,9 +105,11 @@ class RobotBase(brickpi3.BrickPi3):
         weight_table = [0] * self.p_count
         invalid_read = 0 # only count return None, not return 0
 
+        debug_w = []
+
         for i, p in enumerate(self.p_tuples):
             _x, _y, _t = p
-            _w = self.weights[i]
+            _w = self.p_weights[i]
 
             w = self.map.calculate_likelihood(*p, sonar_distance)
 
@@ -108,22 +119,41 @@ class RobotBase(brickpi3.BrickPi3):
 
             weight_table[i] = weight_table[i-1] + w*_w
 
+            debug_w.append(w)
+
+        # DEBUG
+        if sonar_v:
+            logging.warning("Debug likelihood")
+            self.debug_canvas.drawParticles(self.p_tuples, debug_w)
+            time.sleep(1)
+
+
+
 
         # check if there are too many invalid read
-        if invalid_read/self.p_tuples < min_valid_rate:
-            logging.warning("Too much invalid particles")
+        if invalid_read/self.p_count > max_invalid_rate:
+            logging.warning("Too much invalid particles, get{invalid_read}")
             return False
+
+        if invalid_read:
+            logging.warning("Got {invalid_read} invalid particles")
 
 
         # generate next batch of particles
         temp = []
-        rand = numpy.random.uniform(0, weight_table[-1], self.p_count)
+        rand = np.random.uniform(0, weight_table[-1], self.p_count)
         for r in rand:
             i = bisect_left(weight_table, r)
-            temp.append(self.p_tuples)
+            temp.append(self.p_tuples[i])
 
         self.p_tuples = temp
-        self.p_weights = [1/self.p_count]
+        self.p_weights = [1/self.p_count] * self.p_count
+
+        # DEBUG
+        if sonar_v:
+            logging.warning("Debug likelihood normalisation")
+            self.debug_canvas.drawParticles(self.p_tuples, self.p_weights)
+            time.sleep(1)
 
         return True
 
@@ -281,7 +311,7 @@ class Map:
         else:
             return False
 
-    def calculate_likelihood(x, y, t, z):
+    def calculate_likelihood(self, x, y, t, z):
         """
         Return 0 for impossible value, None for unable to decide
         """
@@ -315,13 +345,13 @@ class Map:
             # check if sonar is hit between endpoint
             _x = x + m*cos(t)
             _y = y + m*sin(t)
-            if not ((a_x<_x and _x<b_x) or (b_x<_x and _x<a_x)):
+            if not ((a_x<=_x and _x<=b_x) or (b_x<=_x and _x<=a_x)):
                 continue
-            if not ((a_y<_y and _y<b_y) or (b_y<_y and _y<a_y)):
+            if not ((a_y<=_y and _y<=b_y) or (b_y<=_y and _y<=a_y)):
                 continue
 
             # all check passed, add if is closer
-            if min_m and m<min_m:
+            if min_m is None or m<min_m:
                 min_m = m
 
         # find min_m for the most likely wall, cal likelihood
