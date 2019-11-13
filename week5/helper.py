@@ -173,7 +173,7 @@ class RobotBase(brickpi3.BrickPi3):
 
     def to_waypoint(self, x, y):
         # config
-        movement_accuracy = 1 # unit in cm
+        movement_accuracy = 2 # unit in cm
         max_forward = 30
 
         # get estimation of current location
