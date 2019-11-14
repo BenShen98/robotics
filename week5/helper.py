@@ -50,7 +50,7 @@ class RobotBase(brickpi3.BrickPi3):
         self.map = map
 
         # NOTE: p_weights and p_tuples need have same order
-        placement_error = 10/180*pi
+        placement_error = 20/180*pi
         self.p_count = p_count
         t_errors = np.random.normal(0, placement_error**2,  self.p_count)
         self.p_weights = [1.0/p_count] * p_count
@@ -346,7 +346,7 @@ class Map:
 
         # config
         sonar_var = 3*3             # variance of sonar
-        sonar_K = 1                 # offset value for sonar
+        sonar_K = 0.01                 # offset value for sonar
 
         min_m = None
 
